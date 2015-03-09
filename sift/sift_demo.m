@@ -45,7 +45,8 @@
 % MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR MODIFICATIONS.
 
 I1=imreadbw('sift/data/img3.jpg') ; 
-I2=imreadbw('sift/data/img5.jpg') ;
+I2=imreadbw('sift/
+data/img5.jpg') ;
 
 I1=I1-min(I1(:)) ;
 I1=I1/max(I1(:)) ;

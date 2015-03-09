@@ -1,10 +1,12 @@
 function main(opt)
 	% opt:  'track' for feature tracking
 	%		'nn' for nearest neighbour with orig image
+	hfov = 90;
+	ftrthr = 100;
 
 	close all;
 	if (nargin<1) 	opt = 'track'; end;
-	hfov = 90;
+
 	pth = '~/Desktop/barak.jpg';
 
 	% *** Read image, detect features and plot it
@@ -12,7 +14,7 @@ function main(opt)
 	[imh imw foo] = size(img0);
 	imtsize(1,:) = size(img0);
 
-	[x0, desc0] = detectFtrs(img0);
+	[x0, desc0, scale0] = detectFtrs(img0, ftrthr);
 
 	% *** Plot image with ftrs
 	imshow(img0/2+100);
@@ -20,7 +22,7 @@ function main(opt)
         plotPoints(ha, x0, 'or');
 
     % *** Apply incremental tranformations and track features
-	alpha = [[0:0.5:12]];% [-0.5:-0.5:-	12]]	;
+	alpha = [0:0.5:12];% -[0.5:0.5:12]];% [-0.5:-0.5:-	12]]	;
 	track = zeros(3 ,size(x0, 2), length(alpha));
 	track(1:2,:,1) = x0;
 	track(3,:,1) = 1;
@@ -30,7 +32,7 @@ function main(opt)
 		% Transofrm image, detect ftrs and project back
 		H  				= hrotation2homography(alpha(k), hfov, imw, imh);
 		[img1 offset] 	= rotateCamera(img0, H);
-		[x1, desc1] 	= detectFtrs(img1);
+		[x1, desc1, scale1] 	= detectFtrs(img1, ftrthr);
 		x1off 			= bsxfun(@plus, x1, offset); 
 		x1 				= projectPoints(x1off, inv(H));
 		
@@ -53,38 +55,51 @@ function main(opt)
 	end
 
 
-
+	
 	%plotTrack(ha, track, opt);
 	
 	% *** Compute covariance matrix of the track and eigenvalues
-	lambda = computerCovEigVals(track);
+	lambda = computerCovEigVals(track(1:2,:,:));
 	r = sqrt(sum(lambda.^2, 2));
-	bin = lambda(:,2)<1.0;
+	ratio = lambda(:,1)./lambda(:,2);
 	
+	plotData(ha, x0, ratio);
 	sim = squeeze(track(3,:,:));
 	simvar = var(sim')';
 	bin = simvar < 0.005;
+
+	dst = sqrt(sum(bsxfun(@minus, track(1:2,:,:), track(1:2,:,1)).^2));
+	dst = squeeze(dst)';
+	ndst = bsxfun(@minus, dst, scale0);
+
+	figure()
+		dst = sqrt(sum(bsxfun(@minus, track(1:2,:,:), track(1:2,:,1)).^2));
+		plot(dst(:), sim(:), '.');
+		title('Displacement of the tracked ftr vs. similatity with orig ftr');
+		xlabel('dist from orig ftr [pix]');
+		ylabel('sim with orig ftr [ - ]')	
 	keyboard
+
 
 	% plotPoints(ha, x0(:,bin), 'sg');
 	% plotData(ha, x0, r);
 
 	
 	% *** Plot original ftrs and filtered ftrs
-	figure()
-		imshow(img0/2+100);
-		plotPoints(gca, x0, 'ro');
+	% figure()
+	% 	imshow(img0/2+100);
+	% 	plotPoints(gca, x0, 'ro');
 
-	figure()
-		imshow(img0/2+100);
-		plotPoints(gca, x0(:, bin), 'gs')
+	% figure()
+	% 	imshow(img0/2+100);
+	% 	plotPoints(gca, x0(:, bin), 'gs')
 
-	% *** Plot eigen values
-	figure()
-		plot(lambda(:,1), lambda(:,2), '.');
+	% % *** Plot eigen values
+	% figure()
+	% 	plot(lambda(:,1), lambda(:,2), '.');
 
-	figure()
-		plotHeatmap(gca, x0, x0(:,bin), 15)
+	% figure()
+	% 	plotHeatmap(gca, x0, x0(:,bin), 15);
 			
 
 	keyboard
@@ -92,12 +107,17 @@ end
 
 function lambda = computerCovEigVals(track)
 	N = size(track,2);
-	lambda = zeros(N, 3);
+	lambda = zeros(N, size(track, 1));
 	for (k = 1:N)
 		X = squeeze(track(1, k, :));
 		Y = squeeze(track(2, k, :));
-		S = squeeze(track(3, k, :));
-		lambda(k,:) = eig(cov([X Y S]));
+		if(size(track,1) == 3)
+			S = squeeze(track(3, k, :));
+			lambda(k,:) = eig(cov([X Y S]));
+		else
+			lambda(k,:) = eig(cov([X Y]));
+		end
+		
 	end
 end
 
@@ -112,11 +132,12 @@ function xproj = projectPoints(x, H)
 end
 
 
-function [x desc] = detectFtrs(img)
-	thr = 100;
+function [x desc scale] = detectFtrs(img, thr)
+	if (nargin<2)	thr = 1000; 	end;
 	blobs = detectSURFFeatures(rgb2gray(img), 'MetricThreshold', thr);
 	[desc, validBlobs] = extractFeatures(rgb2gray(img), blobs);
 	x = [validBlobs.Location]';
+	scale = [validBlobs.Scale]';
 end
 
 function [imgh offset] = rotateCamera(img, H)
